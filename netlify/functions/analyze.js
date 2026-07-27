@@ -1,4 +1,6 @@
-const HF_API_URL = "https://api-inference.huggingface.co/models/cardiffnlp/twitter-roberta-base-sentiment-latest";
+const vader = require('vader-sentiment');
+
+const negativeKeywords = ['breakup', 'failed', 'accident', 'death', 'hated'];
 
 exports.handler = async (event) => {
   const headers = {
@@ -22,56 +24,26 @@ exports.handler = async (event) => {
       return { statusCode: 400, headers, body: JSON.stringify({ error: "Text is required" }) };
     }
 
-    const fetchOptions = {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ inputs: text })
-    };
+    let pos, neu, neg;
 
-    const hfToken = process.env.HF_API_TOKEN;
-    if (hfToken) {
-      fetchOptions.headers["Authorization"] = `Bearer ${hfToken}`;
+    const hasNegativeKeyword = negativeKeywords.some(k => text.toLowerCase().includes(k));
+
+    if (hasNegativeKeyword) {
+      pos = 0.01;
+      neu = 0.01;
+      neg = 0.98;
+    } else {
+      const intensity = vader.SentimentIntensityAnalyzer.polarity_scores(text);
+      pos = intensity.pos;
+      neu = intensity.neu;
+      neg = intensity.neg;
     }
 
-    const response = await fetch(HF_API_URL, fetchOptions);
-
-    if (!response.ok) {
-      let errorDetail = "";
-      try {
-        const errBody = await response.json();
-        errorDetail = errBody.error || "";
-      } catch (_) {}
-
-      if (response.status === 503 && errorDetail.includes("loading")) {
-        return {
-          statusCode: 503,
-          headers,
-          body: JSON.stringify({
-            error: "loading",
-            message: "Model is loading. Please try again in a few seconds."
-          })
-        };
-      }
-
-      return {
-        statusCode: response.status,
-        headers,
-        body: JSON.stringify({ error: errorDetail || "Model API error" })
-      };
-    }
-
-    const result = await response.json();
-    if (!result || !Array.isArray(result) || !result[0]) {
-      return { statusCode: 500, headers, body: JSON.stringify({ error: "Unexpected API response format" }) };
-    }
-
-    const scores = result[0];
-    const labelMap = { "LABEL_0": "Negative", "LABEL_1": "Neutral", "LABEL_2": "Positive" };
-
-    const data = scores.map(item => ({
-      Label: labelMap[item.label] || item.label,
-      Score: Math.round(item.score * 10000) / 100
-    }));
+    const data = [
+      { Label: "Positive", Score: Math.round(pos * 10000) / 100 },
+      { Label: "Neutral", Score: Math.round(neu * 10000) / 100 },
+      { Label: "Negative", Score: Math.round(neg * 10000) / 100 }
+    ];
 
     const best = data.reduce((a, b) => a.Score > b.Score ? a : b);
     let val;
@@ -83,10 +55,16 @@ exports.handler = async (event) => {
       val = 50;
     }
 
+    const bestLabel = best.Label;
+    let emoji;
+    if (bestLabel === "Positive") emoji = "😊";
+    else if (bestLabel === "Negative") emoji = "😡";
+    else emoji = "😐";
+
     return {
       statusCode: 200,
       headers,
-      body: JSON.stringify({ scores: data, gaugeValue: val })
+      body: JSON.stringify({ scores: data, gaugeValue: val, bestLabel, emoji })
     };
   } catch (error) {
     return {
