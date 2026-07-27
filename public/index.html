@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SentimentMeter AI</title>
+  <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Inter', sans-serif;
+      background: #0e1117;
+      color: #e0e0e0;
+      min-height: 100vh;
+      display: flex;
+    }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: #1a1d24; }
+    ::-webkit-scrollbar-thumb { background: #3a3f4b; border-radius: 3px; }
+
+    /* LOADER OVERLAY */
+    #loader-overlay {
+      position: fixed; inset: 0; z-index: 9999;
+      background: #0e1117;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      transition: opacity 0.8s ease, visibility 0.8s ease;
+    }
+    #loader-overlay.hidden { opacity: 0; visibility: hidden; }
+    .loader-spinner {
+      width: 60px; height: 60px; border-radius: 50%;
+      border: 4px solid #1a1d24;
+      border-top-color: #6366f1;
+      animation: spin 0.8s linear infinite;
+      margin-bottom: 24px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loader-text {
+      font-size: 18px; font-weight: 600; color: #a0a5b0;
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+    .loader-sub {
+      font-size: 13px; color: #555a66; margin-top: 8px;
+    }
+    @keyframes pulse { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }
+
+    /* SIDEBAR */
+    #sidebar {
+      width: 280px; min-width: 280px; height: 100vh;
+      background: #16181f;
+      border-right: 1px solid #22252e;
+      display: flex; flex-direction: column;
+      overflow-y: auto; position: sticky; top: 0;
+    }
+    #sidebar .sidebar-header {
+      padding: 24px 20px 16px;
+      border-bottom: 1px solid #22252e;
+      display: flex; align-items: center; gap: 12px;
+    }
+    #sidebar .sidebar-header img { width: 40px; height: 40px; }
+    #sidebar .sidebar-header h2 { font-size: 18px; font-weight: 700; color: #f0f0f0; }
+    #sidebar .sidebar-section { padding: 16px 20px; }
+    #sidebar .sidebar-section h3 {
+      font-size: 13px; font-weight: 600; color: #888d99;
+      text-transform: uppercase; letter-spacing: 0.5px;
+      margin-bottom: 12px;
+    }
+    .history-empty {
+      font-size: 13px; color: #555a66; text-align: center;
+      padding: 20px 0;
+    }
+    .history-item {
+      padding: 10px 12px; margin-bottom: 6px;
+      border-radius: 8px; cursor: pointer;
+      transition: background 0.2s; font-size: 13px;
+    }
+    .history-item:hover { background: #1e212a; }
+    .history-item .h-emoji { margin-right: 6px; }
+    .history-item .h-sentiment {
+      font-weight: 600; display: inline-block; margin-bottom: 2px;
+    }
+    .history-item .h-text {
+      color: #888d99; font-size: 12px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .history-item .h-divider {
+      height: 1px; background: #22252e; margin-top: 8px;
+    }
+
+    /* MAIN CONTENT */
+    #main {
+      flex: 1; padding: 40px 48px; max-width: 1100px;
+      animation: fadeSlideIn 0.6s ease-out;
+    }
+    @keyframes fadeSlideIn {
+      from { opacity: 0; transform: translateY(16px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .main-title { text-align: center; margin-bottom: 8px; }
+    .main-title h1 {
+      font-size: 32px; font-weight: 800;
+      background: linear-gradient(135deg, #6366f1, #a78bfa);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    }
+    .main-title p { color: #6b7280; font-size: 15px; margin-top: 4px; }
+
+    .quick-test-label {
+      font-size: 14px; font-weight: 600; color: #888d99;
+      margin: 28px 0 12px; text-transform: uppercase; letter-spacing: 0.5px;
+    }
+    .quick-test-buttons {
+      display: flex; gap: 12px; margin-bottom: 28px;
+    }
+    .quick-test-buttons button {
+      flex: 1; padding: 10px 16px; border: none; border-radius: 8px;
+      font-family: inherit; font-size: 14px; font-weight: 600;
+      cursor: pointer; transition: all 0.2s;
+    }
+    .quick-test-buttons button:nth-child(1) {
+      background: rgba(16,185,129,0.15); color: #34d399;
+    }
+    .quick-test-buttons button:nth-child(2) {
+      background: rgba(245,158,11,0.15); color: #fbbf24;
+    }
+    .quick-test-buttons button:nth-child(3) {
+      background: rgba(239,68,68,0.15); color: #f87171;
+    }
+    .quick-test-buttons button:hover {
+      transform: translateY(-1px); filter: brightness(1.2);
+    }
+
+    textarea {
+      width: 100%; height: 120px; padding: 14px 16px;
+      background: #1a1d24; border: 1px solid #2a2d36;
+      border-radius: 10px; color: #e0e0e0; font-family: inherit;
+      font-size: 15px; resize: vertical; outline: none;
+      transition: border-color 0.2s;
+    }
+    textarea:focus { border-color: #6366f1; }
+    textarea::placeholder { color: #555a66; }
+
+    .analyze-btn {
+      width: 100%; margin-top: 12px; padding: 12px;
+      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      color: #fff; border: none; border-radius: 10px;
+      font-family: inherit; font-size: 16px; font-weight: 700;
+      cursor: pointer; transition: all 0.2s;
+    }
+    .analyze-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 20px rgba(99,102,241,0.4); }
+    .analyze-btn:disabled {
+      opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none;
+    }
+    .analyze-btn.loading {
+      background: linear-gradient(135deg, #4b4ed1, #7a4dd6);
+      pointer-events: none;
+    }
+
+    .error-msg {
+      background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3);
+      color: #f87171; padding: 10px 14px; border-radius: 8px;
+      margin-top: 12px; font-size: 14px; text-align: center;
+    }
+
+    /* RESULTS */
+    #results { display: none; margin-top: 32px; }
+    #results.visible { display: block; }
+    .results-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 24px;
+    }
+    .result-card {
+      background: #16181f; border-radius: 12px;
+      border: 1px solid #22252e; padding: 16px;
+    }
+    .result-card h3 {
+      font-size: 14px; font-weight: 600; color: #888d99;
+      margin-bottom: 8px; text-align: center;
+    }
+    .chart-container { width: 100%; height: 360px; }
+
+    /* FOOTER */
+    .footer {
+      text-align: center; color: #555a66; font-size: 13px;
+      margin-top: 40px; padding-top: 24px;
+      border-top: 1px solid #22252e;
+    }
+    .footer a { color: #6366f1; text-decoration: none; font-weight: 500; }
+    .footer a:hover { text-decoration: underline; }
+
+    /* RESPONSIVE */
+    @media (max-width: 768px) {
+      body { flex-direction: column; }
+      #sidebar {
+        width: 100%; min-width: auto; height: auto; position: static;
+        border-right: none; border-bottom: 1px solid #22252e;
+      }
+      #main { padding: 24px 20px; }
+      .main-title h1 { font-size: 24px; }
+      .quick-test-buttons { flex-direction: column; }
+      .results-grid { grid-template-columns: 1fr; }
+      .chart-container { height: 300px; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- LOADER -->
+  <div id="loader-overlay">
+    <div class="loader-spinner"></div>
+    <div class="loader-text">SentimentMeter AI is Waking Up...</div>
+    <div class="loader-sub">Loading model, please wait</div>
+  </div>
+
+  <!-- SIDEBAR -->
+  <div id="sidebar">
+    <div class="sidebar-header">
+      <img src="https://cdn-icons-png.flaticon.com/512/2103/2103633.png" alt="logo" />
+      <h2>SentimentMeter</h2>
+    </div>
+    <div class="sidebar-section">
+      <h3>Analysis History</h3>
+      <div id="history-container">
+        <div class="history-empty">Your history will appear here.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MAIN -->
+  <div id="main">
+    <div class="main-title">
+      <h1>SentimentMeter: Sentiment Analysis Engine</h1>
+      <p>Measuring the Emotional Pulse of your Text</p>
+    </div>
+
+    <div class="quick-test-label">Quick Test</div>
+    <div class="quick-test-buttons">
+      <button onclick="setInput('I am incredibly happy with these results!')">Happy News 📈</button>
+      <button onclick="setInput('The sky is blue today.')">Fact (Neutral) 📖</button>
+      <button onclick="setInput('The service was extremely disappointing and rude.')">Sad News 📉</button>
+    </div>
+
+    <textarea id="inputText" placeholder="Type how you feel..."></textarea>
+    <button class="analyze-btn" id="analyzeBtn" onclick="analyze()">Analyze Now</button>
+    <div id="errorMsg" class="error-msg" style="display:none;"></div>
+
+    <div id="results">
+      <div class="results-grid">
+        <div class="result-card">
+          <h3>Sentiment Gauge</h3>
+          <div class="chart-container" id="gaugeChart"></div>
+        </div>
+        <div class="result-card">
+          <h3>Confidence Levels</h3>
+          <div class="chart-container" id="barChart"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="footer">
+      Thankyou | Submit issue or feedback on
+      <a href="mailto:rathihimanshuu@gmail.com">rathihimanshuu@gmail.com</a>
+    </div>
+  </div>
+
+  <script>
+    const STORAGE_KEY = "sentimeter_history";
+    let history = [];
+
+    function loadHistory() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (raw) history = JSON.parse(raw);
+      } catch (_) { history = []; }
+      renderHistory();
+    }
+
+    function saveHistory() {
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(history)); } catch (_) {}
+      renderHistory();
+    }
+
+    function renderHistory() {
+      const container = document.getElementById("history-container");
+      if (!history.length) {
+        container.innerHTML = '<div class="history-empty">Your history will appear here.</div>';
+        return;
+      }
+      const items = [...history].reverse().slice(0, 8).map(item => {
+        const textPreview = item.text.length > 25 ? item.text.slice(0, 25) + "..." : item.text;
+        return `
+          <div class="history-item" onclick="setInput('${escapeJS(item.text)}')">
+            <span class="h-emoji">${item.emoji}</span>
+            <span class="h-sentiment">${item.sentiment}</span>
+            <div class="h-text">${textPreview}</div>
+            <div class="h-divider"></div>
+          </div>
+        `;
+      }).join("");
+      container.innerHTML = items;
+    }
+
+    function escapeJS(str) {
+      return str.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;').replace(/\n/g, '\\n');
+    }
+
+    function setInput(text) {
+      document.getElementById("inputText").value = text;
+      document.getElementById("inputText").focus();
+    }
+
+    function showError(msg) {
+      const el = document.getElementById("errorMsg");
+      el.textContent = msg;
+      el.style.display = "block";
+    }
+
+    function hideError() {
+      document.getElementById("errorMsg").style.display = "none";
+    }
+
+    const gaugeDefault = {
+      mode: "gauge+number",
+      value: 50,
+      title: { text: "Waiting...", font: { size: 20 } },
+      gauge: {
+        axis: {
+          range: [0, 100],
+          tickvals: [15, 50, 85],
+          ticktext: ["Negative", "Neutral", "Positive"]
+        },
+        bar: { color: "black" },
+        steps: [
+          { range: [0, 33], color: "#e74c3c" },
+          { range: [33, 66], color: "#f1c40f" },
+          { range: [66, 100], color: "#2ecc71" }
+        ],
+        threshold: { line: { color: "black", width: 4 }, value: 50 }
+      }
+    };
+
+    function initCharts() {
+      Plotly.newPlot("gaugeChart", [{
+        type: "indicator", ...gaugeDefault
+      }], {
+        height: 360, margin: { t: 50, b: 0 },
+        paper_bgcolor: "transparent", font: { color: "#e0e0e0", family: "Inter" },
+        plot_bgcolor: "transparent"
+      }, { responsive: true, displayModeBar: false });
+
+      Plotly.newPlot("barChart", [{
+        x: ["Positive", "Neutral", "Negative"],
+        y: [0, 0, 0],
+        type: "bar",
+        marker: {
+          color: ["#2ecc71", "#f1c40f", "#e74c3c"]
+        }
+      }], {
+        height: 360, margin: { t: 20, b: 40, l: 40, r: 20 },
+        paper_bgcolor: "transparent", font: { color: "#e0e0e0", family: "Inter" },
+        plot_bgcolor: "transparent",
+        xaxis: { color: "#888d99" },
+        yaxis: { color: "#888d99", title: "Score (%)", range: [0, 100] },
+        showlegend: false
+      }, { responsive: true, displayModeBar: false });
+    }
+
+    function updateCharts(data, gaugeVal) {
+      const best = data.reduce((a, b) => a.Score > b.Score ? a : b);
+      let emoji, color, label;
+      if (best.Label === "Positive") { emoji = "😊"; color = "#2ecc71"; label = "Positive"; }
+      else if (best.Label === "Negative") { emoji = "😡"; color = "#e74c3c"; label = "Negative"; }
+      else { emoji = "😐"; color = "#f1c40f"; label = "Neutral"; }
+
+      Plotly.update("gaugeChart", {
+        "value": [gaugeVal],
+        "title.text": [`${emoji} ${label}`],
+        "gauge.threshold.value": [gaugeVal]
+      }, {}, [0]);
+
+      Plotly.update("barChart", {
+        y: [data.find(d => d.Label === "Positive")?.Score || 0,
+            data.find(d => d.Label === "Neutral")?.Score || 0,
+            data.find(d => d.Label === "Negative")?.Score || 0]
+      }, {}, [0]);
+    }
+
+    async function analyze() {
+      const text = document.getElementById("inputText").value.trim();
+      if (!text) { showError("Please enter some text first!"); return; }
+      hideError();
+
+      const btn = document.getElementById("analyzeBtn");
+      btn.disabled = true;
+      btn.textContent = "AI is decoding emotions...";
+      btn.classList.add("loading");
+
+      try {
+        const res = await fetch("/.netlify/functions/analyze", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text })
+        });
+
+        const json = await res.json();
+
+        if (!res.ok) {
+          if (json.error === "loading") {
+            showError("Model is loading. Please wait a moment and try again.");
+          } else {
+            showError(json.error || "Analysis failed. Please try again.");
+          }
+          return;
+        }
+
+        const scores = json.scores;
+        const gaugeVal = json.gaugeValue;
+
+        scores.sort((a, b) => {
+          const order = { "Positive": 0, "Neutral": 1, "Negative": 2 };
+          return (order[a.Label] || 0) - (order[b.Label] || 0);
+        });
+
+        document.getElementById("results").classList.add("visible");
+        updateCharts(scores, gaugeVal);
+
+        const best = scores.reduce((a, b) => a.Score > b.Score ? a : b);
+        let emoji;
+        if (best.Label === "Positive") emoji = "😊";
+        else if (best.Label === "Negative") emoji = "😡";
+        else emoji = "😐";
+
+        if (!history.some(h => h.text === text)) {
+          history.push({ text, sentiment: best.Label, emoji });
+          saveHistory();
+        }
+      } catch (err) {
+        showError("Network error. Please check your connection and try again.");
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "Analyze Now";
+        btn.classList.remove("loading");
+      }
+    }
+
+    // Enter key support
+    document.getElementById("inputText").addEventListener("keydown", function(e) {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        analyze();
+      }
+    });
+
+    // Init
+    loadHistory();
+    initCharts();
+
+    // Hide loader
+    setTimeout(() => {
+      document.getElementById("loader-overlay").classList.add("hidden");
+    }, 1500);
+  </script>
+</body>
+</html>
